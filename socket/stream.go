@@ -53,7 +53,7 @@ func (t *ObjectStream) HeartBeat(beatData string, heartBeat time.Duration) {
 		case <-t.quit:
 			return
 		case <-ticker.C:
-			_, _ := t.rw.Write([]byte(data))
+			_, _ = t.rw.Write([]byte(data))
 			err := t.rw.Flush()
 			if err != nil && err != io.ErrShortWrite {
 				err := t.TryConnection()
