@@ -1,48 +1,59 @@
 package socket
 
 import (
-	"errors"
+	"bufio"
+	"fmt"
 	"net"
 	"time"
-
-	"github.com/valyala/bytebufferpool"
 
 	"github.com/sourcegraph/jsonrpc2/json"
 )
 
 const MAXLEN = 16 * 1024 * 1024
-const HEADBEAT = `{"method":"wallet_status","id":1,"jsonrpc":"2.0"}` + "\n"
+
+//const HEADBEAT = `{"method":"wallet_status","id":1,"jsonrpc":"2.0"}` + "\n"
 
 type ObjectStream struct {
-	conn   *TcpStream
-	buffer *bytebufferpool.ByteBuffer
-	quit   chan struct{}
+	conn net.Conn
+	rw   *bufio.ReadWriter
+
+	ip      string
+	port    int
+	timeOut time.Time
+	quit    chan struct{}
 }
 
-func NewObjectStream(ip string, port int, timeOut time.Time) (*ObjectStream, error) {
-	stream, err := NewTcpStream(ip, port, timeOut)
+func NewObjectStream(ip string, port int) (*ObjectStream, error) {
+	conn, err := net.Dial("tcp", fmt.Sprintf("%s:%d", ip, port))
 	if err != nil {
 		return nil, err
 	}
+	rd := bufio.NewReaderSize(conn, MAXLEN)
+	wt := bufio.NewWriterSize(conn, MAXLEN)
+
+	rw := bufio.NewReadWriter(rd, wt)
 
 	obj := &ObjectStream{
-		conn: stream,
+		ip:   ip,
+		port: port,
+		conn: conn,
+		rw:   rw,
 		quit: make(chan struct{}),
 	}
-	go obj.headBeat()
+
 	return obj, nil
 }
 
-func (t *ObjectStream) headBeat() {
-	ticker := time.NewTicker(time.Second * 10)
+func (t *ObjectStream) headBeat(beatData string, heartbeat time.Duration) {
+	ticker := time.NewTicker(heartbeat)
 	for {
 		select {
 		case <-t.quit:
 			return
 		case <-ticker.C:
-			_, err := t.conn.Write([]byte(HEADBEAT))
+			_, err := t.conn.Write([]byte(beatData))
 			if err != nil {
-				err := t.conn.TryConnection()
+				err := t.TryConnection()
 				if err != nil {
 					return
 				}
@@ -51,102 +62,41 @@ func (t *ObjectStream) headBeat() {
 	}
 }
 
-func (t *ObjectStream) Close() error {
-	err := t.conn.Close()
+func (o *ObjectStream) Close() error {
+	err := o.conn.Close()
 	if err != nil {
 		return err
 	}
-
-	t.quit <- struct{}{}
-	close(t.quit)
+	o.quit <- struct{}{}
+	close(o.quit)
 	return nil
 }
 
-func (t *ObjectStream) WriteObject(obj interface{}) error {
+func (o *ObjectStream) WriteObject(obj interface{}) error {
 	data, err := json.Marshal(obj)
 	if err != nil {
 		return err
 	}
-
 	data = append(data, []byte("\n")...)
-
-	return t.Send(data)
-}
-
-func (t *ObjectStream) ReadObject(v interface{}) error {
-	if t.buffer == nil {
-		t.buffer = bytebufferpool.Get()
-	}
-
-	defer func() {
-		bytebufferpool.Put(t.buffer)
-		t.buffer = nil
-	}()
-
-	for {
-		_, err := t.buffer.ReadFrom(t.conn)
-		if err != nil {
-			return nil
-		}
-		// TODO
-		if t.buffer.Len() > MAXLEN {
-			return errors.New("response data too many large")
-		}
-
-		l := t.buffer.Len()
-		data := t.buffer.Bytes()
-
-		if data[l-1] == 0x10 {
-			return json.Unmarshal(data[:l-1], v)
-		}
-		for key, value := range data {
-			if value == 0x10 {
-				t.buffer.Set(data[key:])
-				return json.Unmarshal(data[:key-1], v)
-			}
-		}
-	}
-}
-
-func (t *ObjectStream) Send(data []byte) error {
-	var start, c int
-	var err error
-	for {
-		if c, err = t.conn.Write(data[start:]); err != nil {
-			return err
-		}
-		start += c
-		if c == 0 || start == len(data) {
-			break
-		}
-	}
-	return nil
-}
-
-type TcpStream struct {
-	*net.TCPConn
-	ip      string
-	port    int
-	timeOut time.Time
-}
-
-func NewTcpStream(ip string, port int, timeOut time.Time) (*TcpStream, error) {
-	stream := &TcpStream{
-		ip:      ip,
-		port:    port,
-		timeOut: timeOut,
-	}
-	err := stream.TryConnection()
+	_, err = o.rw.Write(data)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	return stream, nil
+	return o.rw.Flush()
 }
 
-func (t *TcpStream) TryConnection() error {
+func (o *ObjectStream) ReadObject(v interface{}) error {
+	data, _, err := o.rw.ReadLine()
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(data, v)
+}
+
+func (o *ObjectStream) TryConnection() error {
 	count := 0
 	for {
-		conn, err := connection(t.ip, t.port, t.timeOut)
+		conn, err := net.Dial("tcp", fmt.Sprintf("%s:%d", o.ip, o.port))
 		if err != nil {
 			count++
 			if count > 3 {
@@ -155,28 +105,9 @@ func (t *TcpStream) TryConnection() error {
 			continue
 		}
 
-		t.TCPConn = conn
+		o.conn = conn
+		o.rw.Reader.Reset(conn)
+		o.rw.Writer.Reset(conn)
 		return nil
 	}
-}
-
-func connection(ip string, port int, timeOut time.Time) (*net.TCPConn, error) {
-	conn, err := net.DialTCP("tcp", nil, &net.TCPAddr{IP: net.ParseIP(ip), Port: port})
-	if err != nil {
-		return nil, err
-	}
-	err = conn.SetKeepAlive(true)
-	if err != nil {
-		return nil, err
-	}
-	err = conn.SetReadDeadline(timeOut)
-	if err != nil {
-		return nil, err
-	}
-	err = conn.SetWriteDeadline(timeOut)
-	if err != nil {
-		return nil, err
-	}
-
-	return conn, nil
 }
