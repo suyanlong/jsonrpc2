@@ -318,6 +318,7 @@ var ErrClosed = errors.New("jsonrpc2: connection is closed")
 // client not on the given conn.
 func NewConn(ctx context.Context, stream ObjectStream, h Handler, opts ...ConnOpt) *Conn {
 	c := &Conn{
+		seq:        1,
 		stream:     stream,
 		h:          h,
 		pending:    map[ID]*call{},

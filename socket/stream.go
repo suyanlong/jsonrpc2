@@ -10,7 +10,7 @@ import (
 	"github.com/sourcegraph/jsonrpc2/json"
 )
 
-const MAXLEN = 16 * 1024 * 1024
+const MAXLEN = 32 * 1024 * 1024 // 32M
 
 //const HEADBEAT = `{"method":"wallet_status","id":1,"jsonrpc":"2.0"}`
 
