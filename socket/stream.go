@@ -45,7 +45,7 @@ func NewObjectStream(ip string, port int) (*ObjectStream, error) {
 	return obj, nil
 }
 
-func (t *ObjectStream) HeadBeat(beatData string, heartBeat time.Duration) {
+func (t *ObjectStream) HeartBeat(beatData string, heartBeat time.Duration) {
 	ticker := time.NewTicker(heartBeat)
 	data := append([]byte(beatData), []byte("\n")...)
 	for {
@@ -53,8 +53,8 @@ func (t *ObjectStream) HeadBeat(beatData string, heartBeat time.Duration) {
 		case <-t.quit:
 			return
 		case <-ticker.C:
-			_, err := t.rw.Write([]byte(data))
-			_ := t.rw.Flush()
+			_, _ := t.rw.Write([]byte(data))
+			err := t.rw.Flush()
 			if err != nil && err != io.ErrShortWrite {
 				err := t.TryConnection()
 				if err != nil {
