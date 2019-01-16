@@ -3,8 +3,8 @@ package jsonrpc2
 import (
 	"bufio"
 	"encoding/binary"
-	"encoding/json"
 	"fmt"
+	"github.com/sourcegraph/jsonrpc2/json"
 	"io"
 	"strconv"
 	"strings"

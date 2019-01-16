@@ -5,8 +5,9 @@ import (
 	"net"
 	"time"
 
-	"github.com/json-iterator/go"
 	"github.com/valyala/bytebufferpool"
+
+	"github.com/sourcegraph/jsonrpc2/json"
 )
 
 const MAXLEN = 16 * 1024 * 1024
@@ -62,7 +63,7 @@ func (t *ObjectStream) Close() error {
 }
 
 func (t *ObjectStream) WriteObject(obj interface{}) error {
-	data, err := jsoniter.Marshal(obj)
+	data, err := json.Marshal(obj)
 	if err != nil {
 		return err
 	}
@@ -96,12 +97,12 @@ func (t *ObjectStream) ReadObject(v interface{}) error {
 		data := t.buffer.Bytes()
 
 		if data[l-1] == 0x10 {
-			return jsoniter.Unmarshal(data[:l-1], v)
+			return json.Unmarshal(data[:l-1], v)
 		}
 		for key, value := range data {
 			if value == 0x10 {
 				t.buffer.Set(data[key:])
-				return jsoniter.Unmarshal(data[:key-1], v)
+				return json.Unmarshal(data[:key-1], v)
 			}
 		}
 	}

@@ -2,7 +2,7 @@ package jsonrpc2
 
 import (
 	"bytes"
-	"encoding/json"
+	"github.com/sourcegraph/jsonrpc2/json"
 	"reflect"
 	"testing"
 )

@@ -5,13 +5,14 @@ package jsonrpc2
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log"
 	"strconv"
 	"sync"
+
+	"github.com/sourcegraph/jsonrpc2/json"
 )
 
 // JSONRPC2 describes an interface for issuing requests that speak the

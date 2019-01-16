@@ -3,7 +3,6 @@ package jsonrpc2_test
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -15,7 +14,9 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+
 	"github.com/sourcegraph/jsonrpc2"
+	"github.com/sourcegraph/jsonrpc2/json"
 	websocketjsonrpc2 "github.com/sourcegraph/jsonrpc2/websocket"
 )
 

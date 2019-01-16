@@ -1,8 +1,9 @@
 package jsonrpc2
 
 import (
-	"encoding/json"
 	"sync"
+
+	"github.com/sourcegraph/jsonrpc2/json"
 )
 
 // Logger interface implements one method - Printf.
