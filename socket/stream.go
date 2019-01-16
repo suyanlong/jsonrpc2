@@ -3,6 +3,7 @@ package socket
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"net"
 	"time"
 
@@ -11,7 +12,7 @@ import (
 
 const MAXLEN = 16 * 1024 * 1024
 
-//const HEADBEAT = `{"method":"wallet_status","id":1,"jsonrpc":"2.0"}` + "\n"
+//const HEADBEAT = `{"method":"wallet_status","id":1,"jsonrpc":"2.0"}`
 
 type ObjectStream struct {
 	conn net.Conn
@@ -44,15 +45,17 @@ func NewObjectStream(ip string, port int) (*ObjectStream, error) {
 	return obj, nil
 }
 
-func (t *ObjectStream) HeadBeat(beatData string, heartbeat time.Duration) {
-	ticker := time.NewTicker(heartbeat)
+func (t *ObjectStream) HeadBeat(beatData string, heartBeat time.Duration) {
+	ticker := time.NewTicker(heartBeat)
+	data := append([]byte(beatData), []byte("\n")...)
 	for {
 		select {
 		case <-t.quit:
 			return
 		case <-ticker.C:
-			_, err := t.conn.Write([]byte(beatData))
-			if err != nil {
+			_, err := t.rw.Write([]byte(data))
+			_ := t.rw.Flush()
+			if err != nil && err != io.ErrShortWrite {
 				err := t.TryConnection()
 				if err != nil {
 					return
