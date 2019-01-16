@@ -44,7 +44,7 @@ func NewObjectStream(ip string, port int) (*ObjectStream, error) {
 	return obj, nil
 }
 
-func (t *ObjectStream) headBeat(beatData string, heartbeat time.Duration) {
+func (t *ObjectStream) HeadBeat(beatData string, heartbeat time.Duration) {
 	ticker := time.NewTicker(heartbeat)
 	for {
 		select {
