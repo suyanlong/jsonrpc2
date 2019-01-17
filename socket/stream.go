@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"time"
 
@@ -48,18 +49,28 @@ func NewObjectStream(ip string, port int) (*ObjectStream, error) {
 func (t *ObjectStream) HeartBeat(beatData string, heartBeat time.Duration) {
 	ticker := time.NewTicker(heartBeat)
 	data := append([]byte(beatData), []byte("\n")...)
+	tryConn := func(err error) {
+		_, ok := err.(*net.OpError)
+		if ok {
+			err := t.TryConnection()
+			if err != nil {
+				log.Println(err)
+			}
+		}
+	}
 	for {
 		select {
 		case <-t.quit:
 			return
 		case <-ticker.C:
-			_, _ = t.rw.Write([]byte(data))
-			err := t.rw.Flush()
+			n, err := t.rw.Write([]byte(data))
+			if n == 0{
+				tryConn(err)
+			}
+
+			err = t.rw.Flush()
 			if err != nil && err != io.ErrShortWrite {
-				err := t.TryConnection()
-				if err != nil {
-					return
-				}
+				tryConn(err)
 			}
 		}
 	}
@@ -99,7 +110,7 @@ func (o *ObjectStream) ReadObject(v interface{}) error {
 func (o *ObjectStream) TryConnection() error {
 	count := 0
 	for {
-		conn, err := net.Dial("tcp", fmt.Sprintf("%s:%d", o.ip, o.port))
+		conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:%d", o.ip, o.port),time.Second * 10)
 		if err != nil {
 			count++
 			if count > 3 {

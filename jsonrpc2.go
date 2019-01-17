@@ -11,6 +11,7 @@ import (
 	"log"
 	"strconv"
 	"sync"
+	"time"
 
 	"github.com/sourcegraph/jsonrpc2/json"
 )
@@ -511,7 +512,11 @@ func (c *Conn) readMessages(ctx context.Context) {
 		var m anyMessage
 		err = c.stream.ReadObject(&m)
 		if err != nil {
-			break
+			log.Println(err)
+			if c.closing {
+				break
+			}
+			err = nil
 		}
 
 		switch {
@@ -557,6 +562,9 @@ func (c *Conn) readMessages(ctx context.Context) {
 					close(call.done)
 				}
 			}
+		default:
+			// sleep 5s
+			time.Sleep(time.Second * 5)
 		}
 	}
 
