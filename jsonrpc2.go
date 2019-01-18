@@ -416,6 +416,7 @@ func (c *Conn) send(ctx context.Context, m *anyMessage, wait bool) (cc *call, er
 // its result is stored in result (a pointer to a value that can be
 // JSON-unmarshaled into); otherwise, a non-nil error is returned.
 func (c *Conn) Call(ctx context.Context, method string, params, result interface{}, opts ...CallOption) error {
+	ctxTimeOut, _ := context.WithTimeout(ctx, time.Second*30)
 	req := &Request{Method: method}
 	if err := req.SetParams(params); err != nil {
 		return err
@@ -428,7 +429,7 @@ func (c *Conn) Call(ctx context.Context, method string, params, result interface
 			return err
 		}
 	}
-	call, err := c.send(ctx, &anyMessage{request: req}, true)
+	call, err := c.send(ctxTimeOut, &anyMessage{request: req}, true)
 	if err != nil {
 		return err
 	}
@@ -451,8 +452,8 @@ func (c *Conn) Call(ctx context.Context, method string, params, result interface
 		}
 		return nil
 
-	case <-ctx.Done():
-		return ctx.Err()
+	case <-ctxTimeOut.Done():
+		return ctxTimeOut.Err()
 	}
 }
 
