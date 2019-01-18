@@ -512,7 +512,7 @@ func (c *Conn) readMessages(ctx context.Context) {
 		var m anyMessage
 		err = c.stream.ReadObject(&m)
 		if err != nil {
-			log.Println(err)
+			log.Printf("readMessages: %s", err.Error())
 			if c.closing {
 				break
 			}

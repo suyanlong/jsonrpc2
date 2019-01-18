@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"sync/atomic"
 	"time"
 
 	"github.com/sourcegraph/jsonrpc2/json"
@@ -13,11 +14,11 @@ import (
 
 const MAXLEN = 32 * 1024 * 1024 // 32M
 
-//const HEADBEAT = `{"method":"wallet_status","id":1,"jsonrpc":"2.0"}`
-
 type ObjectStream struct {
-	conn net.Conn
-	rw   *bufio.ReadWriter
+	conn     net.Conn
+	rw       *bufio.ReadWriter
+	reChan   chan error
+	isTrycon int32
 
 	ip      string
 	port    int
@@ -36,42 +37,30 @@ func NewObjectStream(ip string, port int) (*ObjectStream, error) {
 	rw := bufio.NewReadWriter(rd, wt)
 
 	obj := &ObjectStream{
-		ip:   ip,
-		port: port,
-		conn: conn,
-		rw:   rw,
-		quit: make(chan struct{}),
+		ip:       ip,
+		port:     port,
+		conn:     conn,
+		rw:       rw,
+		quit:     make(chan struct{}),
+		reChan:   make(chan error, 1),
+		isTrycon: 0,
 	}
-
+	go obj.TryReConnection()
 	return obj, nil
 }
 
-func (t *ObjectStream) HeartBeat(beatData string, heartBeat time.Duration) {
-	ticker := time.NewTicker(heartBeat)
-	data := append([]byte(beatData), []byte("\n")...)
-	tryConn := func(err error) {
-		_, ok := err.(*net.OpError)
-		if ok {
-			err := t.TryConnection()
-			if err != nil {
-				log.Println(err)
-			}
-		}
-	}
+func (o *ObjectStream) TryReConnection() {
 	for {
 		select {
-		case <-t.quit:
+		case <-o.quit:
 			return
-		case <-ticker.C:
-			n, err := t.rw.Write([]byte(data))
-			if n == 0{
-				tryConn(err)
+		case <-o.reChan:
+			atomic.StoreInt32(&o.isTrycon, 1)
+			err := o.TryConnection()
+			if err != nil {
+				log.Printf("TryReConnection: %s", err.Error())
 			}
-
-			err = t.rw.Flush()
-			if err != nil && err != io.ErrShortWrite {
-				tryConn(err)
-			}
+			atomic.StoreInt32(&o.isTrycon, 0)
 		}
 	}
 }
@@ -86,6 +75,14 @@ func (o *ObjectStream) Close() error {
 	return nil
 }
 
+func (o *ObjectStream) checkTryConnError(err error) error {
+	_, ok := err.(*net.OpError)
+	if (ok || err == io.EOF) && atomic.LoadInt32(&o.isTrycon) == 0 {
+		o.reChan <- err
+	}
+	return err
+}
+
 func (o *ObjectStream) WriteObject(obj interface{}) error {
 	data, err := json.Marshal(obj)
 	if err != nil {
@@ -94,15 +91,16 @@ func (o *ObjectStream) WriteObject(obj interface{}) error {
 	data = append(data, []byte("\n")...)
 	_, err = o.rw.Write(data)
 	if err != nil {
-		return err
+		return o.checkTryConnError(err)
 	}
-	return o.rw.Flush()
+	err = o.rw.Flush()
+	return o.checkTryConnError(err)
 }
 
 func (o *ObjectStream) ReadObject(v interface{}) error {
 	data, _, err := o.rw.ReadLine()
 	if err != nil {
-		return err
+		return o.checkTryConnError(err)
 	}
 	return json.Unmarshal(data, v)
 }
@@ -110,7 +108,7 @@ func (o *ObjectStream) ReadObject(v interface{}) error {
 func (o *ObjectStream) TryConnection() error {
 	count := 0
 	for {
-		conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:%d", o.ip, o.port),time.Second * 10)
+		conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:%d", o.ip, o.port), time.Second*10)
 		if err != nil {
 			count++
 			if count > 3 {
